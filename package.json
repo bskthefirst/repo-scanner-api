@@ -1,0 +1,18 @@
+{
+  "name": "repo-scanner-api",
+  "version": "1.0.0",
+  "description": "Scan GitHub repos for exposed secrets and misconfigs",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js"
+  },
+  "keywords": ["security", "scanner", "github", "api"],
+  "author": "bskthefirst",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "stripe": "^14.0.0",
+    "node-fetch": "^2.7.0"
+  }
+}

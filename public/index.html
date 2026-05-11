@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RepoScanner — $5 GitHub Security Audit</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0a0a0f;color:#e0e0e0;line-height:1.6}
+.container{max-width:900px;margin:0 auto;padding:40px 20px}
+header{text-align:center;padding:60px 0 40px}
+header h1{font-size:3rem;font-weight:800;background:linear-gradient(90deg,#00d4aa,#00a8e8);-webkit-background-clip:text;-webkit-text-fill-color:transparent;margin-bottom:10px}
+header p{font-size:1.2rem;color:#888;max-width:500px;margin:0 auto}
+.badge{display:inline-block;background:#1a1a2e;border:1px solid #00d4aa;color:#00d4aa;padding:6px 16px;border-radius:20px;font-size:.85rem;font-weight:600;margin-top:20px}
+.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:20px;margin:50px 0}
+.card{background:#12121f;border:1px solid #1e1e2d;border-radius:12px;padding:24px}
+.card h3{color:#fff;margin-bottom:8px;font-size:1.1rem}
+.card p{color:#888;font-size:.95rem}
+.scanner{background:#12121f;border:1px solid #1e1e2d;border-radius:16px;padding:30px;margin:40px 0}
+.scanner h2{color:#fff;margin-bottom:20px;font-size:1.5rem}
+.input-group{display:flex;gap:10px;margin-bottom:15px}
+input[type="text"]{flex:1;padding:14px 18px;background:#0a0a0f;border:1px solid #2a2a3a;border-radius:10px;color:#fff;font-size:1rem;outline:none}
+input[type="text"]:focus{border-color:#00d4aa}
+button{padding:14px 28px;background:linear-gradient(90deg,#00d4aa,#00a8e8);border:none;border-radius:10px;color:#000;font-weight:700;font-size:1rem;cursor:pointer;transition:opacity .2s}
+button:hover{opacity:.9}
+#result{margin-top:20px;padding:20px;background:#0a0a0f;border-radius:10px;border:1px solid #2a2a3a;font-family:monospace;font-size:.9rem;white-space:pre-wrap;min-height:80px;color:#888}
+#result.found{color:#ff4444;border-color:#ff4444}
+#result.safe{color:#00d4aa;border-color:#00d4aa}
+.cta{text-align:center;padding:60px 0}
+.cta h2{font-size:2rem;margin-bottom:15px}
+.cta p{color:#888;margin-bottom:30px;max-width:450px;margin-left:auto;margin-right:auto}
+.price{font-size:3rem;font-weight:800;color:#fff;margin-bottom:10px}
+.price span{font-size:1rem;color:#888;font-weight:400}
+footer{text-align:center;padding:40px 0;color:#555;font-size:.9rem;border-top:1px solid #1e1e2d}
+footer a{color:#00d4aa;text-decoration:none}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid #00d4aa;border-top-color:transparent;border-radius:50%;animation:spin 1s linear infinite;margin-right:8px;vertical-align:middle}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="container">
+<header>
+<h1>RepoScanner</h1>
+<p>Find exposed secrets, .git directories, and misconfigs in any GitHub repo before attackers do.</p>
+<span class="badge">Used to find the Compound Finance critical bug</span>
+</header>
+
+<div class="features">
+<div class="card">
+<h3>Exposed .git/config</h3>
+<p>Detects if the entire .git directory is accessible, leaking full source history and deleted secrets.</p>
+</div>
+<div class="card">
+<h3>Hardcoded Secrets</h3>
+<p>Scans for AWS keys, GitHub tokens, private keys, DB passwords, and 8+ other secret patterns.</p>
+</div>
+<div class="card">
+<h3>Environment Files</h3>
+<p>Finds leaked .env, .env.local, and config files that expose production credentials.</p>
+</div>
+<div class="card">
+<h3>Misconfigurations</h3>
+<p>Checks for open CORS, missing security headers, exposed package.json, and directory listing.</p>
+</div>
+</div>
+
+<div class="scanner">
+<h2>Free Preview Scan</h2>
+<div class="input-group">
+<input type="text" id="repoUrl" placeholder="https://github.com/owner/repo" value="">
+<button onclick="doScan()">Scan Now</button>
+</div>
+<div id="result">Enter a GitHub repo URL and hit Scan Now...</div>
+</div>
+
+<div class="cta">
+<h2>Get the Full Report</h2>
+<p>Free scan checks 4 common exposures. Full scan audits 15+ vectors with detailed remediation steps.</p>
+<div class="price">$5 <span>/ scan</span></div>
+<button onclick="buyScan()">Buy Full Scan</button>
+</div>
+
+<footer>
+<p>API available at <a href="/">/</a> &middot; <a href="https://github.com/bskthefirst/repo-scanner-api">GitHub</a></p>
+</footer>
+</div>
+
+<script>
+async function doScan() {
+  const url = document.getElementById('repoUrl').value.trim();
+  const resEl = document.getElementById('result');
+  if (!url) { resEl.textContent = 'Enter a repo URL'; return; }
+  resEl.className = '';
+  resEl.innerHTML = '<span class="spinner"></span> Scanning...';
+  try {
+    const r = await fetch('/scan?repo=' + encodeURIComponent(url), {method:'POST'});
+    const data = await r.json();
+    const lines = [];
+    lines.push('Risk Score: ' + (data.risk_score || 0) + '/100');
+    lines.push('Exposed Files: ' + (data.exposed_files?.length || 0));
+    lines.push('Secrets Found: ' + (data.secrets_found?.length || 0));
+    lines.push('Summary: ' + data.summary);
+    resEl.textContent = lines.join('\n');
+    resEl.className = data.risk_score > 0 ? 'found' : 'safe';
+  } catch(e) {
+    resEl.textContent = 'Error: ' + e.message;
+  }
+}
+async function buyScan() {
+  const url = document.getElementById('repoUrl').value.trim();
+  try {
+    const r = await fetch('/create-checkout-session', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({repo: url || 'https://github.com/owner/repo'})
+    });
+    const data = await r.json();
+    if (data.url) window.location = data.url;
+    else alert('Payment setup pending. Contact admin.');
+  } catch(e) {
+    alert('Stripe not configured yet. API owner needs to set STRIPE_SECRET_KEY.');
+  }
+}
+</script>
+</body>
+</html>
