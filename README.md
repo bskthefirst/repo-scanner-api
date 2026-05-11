@@ -4,6 +4,8 @@ Scan GitHub repositories for exposed secrets, `.git/config`, environment files, 
 
 **Live Demo:** [https://repo-scanner.onrender.com](https://repo-scanner.onrender.com) *(pending deploy)*
 
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/bskthefirst/repo-scanner-api)
+
 ## Pricing
 
 - **Free Preview** — 4 quick checks (`.git/config`, `.env`, `.env.local`, `config.json`)
@@ -28,17 +30,18 @@ npm install
 STRIPE_SECRET_KEY=sk_test_xxx node index.js
 ```
 
-## Stripe Setup
+## Stripe Setup (5 min)
 
-1. Create account at [stripe.com](https://stripe.com)
+1. Create account at [stripe.com](https://stripe.com) — no KYC for test mode
 2. Get **Secret Key** from Developers → API keys
 3. Set env var: `STRIPE_SECRET_KEY=sk_live_xxx`
-4. Create a **Payment Link** or use `/create-checkout-session`
-5. Deploy and start accepting $5 scans.
+4. Create a **Payment Link** ($5) or use the built-in `/create-checkout-session` endpoint
+5. Deploy and start accepting payments.
 
 ## Deployment
 
-**Render (recommended):**
+**Render (one-click):**
+Click the button above or:
 1. Push to GitHub
 2. New Web Service → Connect repo
 3. Set env vars: `STRIPE_SECRET_KEY`, `STRIPE_PAYMENT_LINK`
