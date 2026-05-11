@@ -77,7 +77,17 @@ footer a{color:#00d4aa;text-decoration:none}
 <h2>Get the Full Report</h2>
 <p>Free scan checks 4 common exposures. Full scan audits 15+ vectors with detailed remediation steps.</p>
 <div class="price">$5 <span>/ scan</span></div>
-<button onclick="buyScan()">Buy Full Scan</button>
+<a href="https://paypal.me/bsknap/5USD" target="_blank" style="text-decoration:none">
+<button>Pay with PayPal</button>
+</a>
+<div style="margin-top:20px;font-size:.9rem;color:#888">
+<p>After payment, enter your Transaction ID below:</p>
+<div class="input-group" style="max-width:500px;margin:10px auto">
+<input type="text" id="txId" placeholder="PayPal Transaction ID (e.g. 4VX12345AB678901D)" style="flex:1">
+<button onclick="verifyPayPal()" style="padding:14px 20px">Unlock Full Scan</button>
+</div>
+<div id="verifyResult" style="font-family:monospace;font-size:.85rem;min-height:30px"></div>
+</div>
 </div>
 
 <footer>
@@ -106,19 +116,44 @@ async function doScan() {
     resEl.textContent = 'Error: ' + e.message;
   }
 }
-async function buyScan() {
+async function verifyPayPal() {
+  const txId = document.getElementById('txId').value.trim();
   const url = document.getElementById('repoUrl').value.trim();
+  const resEl = document.getElementById('verifyResult');
+  if (!txId || txId.length < 6) { resEl.textContent = 'Enter a valid Transaction ID'; return; }
+  if (!url) { resEl.textContent = 'Enter a repo URL first'; return; }
+  resEl.innerHTML = '<span class="spinner"></span> Verifying...';
   try {
-    const r = await fetch('/create-checkout-session', {
+    const r = await fetch('/verify-paypal', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({repo: url || 'https://github.com/owner/repo'})
+      body: JSON.stringify({tx_id: txId, repo: url})
     });
     const data = await r.json();
-    if (data.url) window.location = data.url;
-    else alert('Payment setup pending. Contact admin.');
+    if (data.verified) {
+      resEl.innerHTML = '<span style="color:#00d4aa">Verified! Running full scan...</span>';
+      const s = await fetch('/scan/full?repo=' + encodeURIComponent(url) + '&tx_id=' + encodeURIComponent(txId), {method:'POST'});
+      const scan = await s.json();
+      const lines = [];
+      lines.push('=== FULL SCAN RESULTS ===');
+      lines.push('Risk Score: ' + (scan.risk_score || 0) + '/100');
+      lines.push('Exposed Files: ' + (scan.exposed_files?.length || 0));
+      lines.push('Misconfigs: ' + (scan.misconfigs?.length || 0));
+      if (scan.secrets_found?.length > 0) {
+        lines.push('\nSecrets Found:');
+        scan.secrets_found.forEach(s => lines.push('  - ' + s.type + ' (' + s.count + ' matches)'));
+      }
+      if (scan.misconfigs?.length > 0) {
+        lines.push('\nMisconfigurations:');
+        scan.misconfigs.forEach(m => lines.push('  [' + m.severity + '] ' + m.issue + ': ' + m.detail));
+      }
+      lines.push('\nSummary: ' + scan.summary);
+      resEl.innerHTML = '<pre style="text-align:left;overflow:auto">' + lines.join('\n') + '</pre>';
+    } else {
+      resEl.textContent = 'Error: ' + (data.error || 'Unknown');
+    }
   } catch(e) {
-    alert('Stripe not configured yet. API owner needs to set STRIPE_SECRET_KEY.');
+    resEl.textContent = 'Error: ' + e.message;
   }
 }
 </script>

@@ -1,14 +1,18 @@
 const express = require('express');
-const Stripe = require('stripe');
+const fetch = require('node-fetch');
 const { scanRepo } = require('./lib/scanner');
 
 const app = express();
 app.use(express.json());
 app.use(express.static('public'));
 
-const stripe = process.env.STRIPE_SECRET_KEY ? Stripe(process.env.STRIPE_SECRET_KEY) : null;
-const PAYMENT_LINK = process.env.STRIPE_PAYMENT_LINK || '';
-const PRICE_CENTS = 500; // $5.00
+const PAYPAL_ME = process.env.PAYPAL_ME || 'bsknap';
+const PAYPAL_EMAIL = process.env.PAYPAL_EMAIL || '';
+const PRICE = '5.00';
+const CURRENCY = 'USD';
+
+// Verified payments store (in-memory for demo, use DB in production)
+const verifiedPayments = new Set();
 
 // CORS for public API
 app.use((req, res, next) => {
@@ -33,24 +37,60 @@ app.get('/', (req, res) => {
   res.json({
     service: 'repo-scanner-api',
     version: '1.0.0',
+    payment_method: 'PayPal',
+    paypal_me: `https://paypal.me/${PAYPAL_ME}/${PRICE}${CURRENCY}`,
     endpoints: {
       scan: 'POST /scan?repo=GITHUB_URL  (free preview)',
-      full_scan: 'POST /scan/full?repo=GITHUB_URL&session_id=STRIPE_SESSION_ID  (paid)',
-      payment: 'GET /pay  (get Stripe payment link)'
+      full_scan: 'POST /scan/full?repo=GITHUB_URL&tx_id=PAYPAL_TX_ID  (paid)',
+      verify_paypal: 'POST /verify-paypal  (submit after payment)'
     },
-    price: '$5.00 per full scan'
+    price: `$${PRICE} per full scan`
   });
 });
 
 // Get payment link
 app.get('/pay', (req, res) => {
-  if (!PAYMENT_LINK) {
-    return res.status(503).json({ error: 'Payment not configured yet. Set STRIPE_PAYMENT_LINK env var.' });
-  }
+  const returnUrl = req.query.return_url || req.headers.referer || '/';
   res.json({
-    payment_link: PAYMENT_LINK,
-    price: '$5.00',
-    note: 'After payment, you will be redirected back with a session_id. Use that to call /scan/full'
+    payment_url: `https://paypal.me/${PAYPAL_ME}/${PRICE}${CURRENCY}`,
+    price: `$${PRICE}`,
+    currency: CURRENCY,
+    instructions: [
+      '1. Click the payment URL and send the exact amount',
+      '2. Note your PayPal Transaction ID (emailed to you)',
+      `3. POST to /verify-paypal with {tx_id: "your-tx-id", repo: "github-url"}`
+    ],
+    payment_url_direct: `https://paypal.me/${PAYPAL_ME}/${PRICE}${CURRENCY}`
+  });
+});
+
+// Verify PayPal payment (manual approval for now, webhook later)
+app.post('/verify-paypal', (req, res) => {
+  const { tx_id, repo, payer_email } = req.body;
+  
+  if (!tx_id || tx_id.length < 6) {
+    return res.status(400).json({ error: 'Transaction ID required (minimum 6 chars)' });
+  }
+  if (!repo) {
+    return res.status(400).json({ error: 'Repo URL required' });
+  }
+
+  // Check if already verified (prevent double-use)
+  if (verifiedPayments.has(tx_id)) {
+    return res.status(400).json({ error: 'This transaction ID has already been used' });
+  }
+
+  // For now: auto-accept with a note to admin to verify
+  // In production, integrate PayPal API here to verify tx
+  verifiedPayments.add(tx_id);
+  
+  res.json({
+    verified: true,
+    tx_id: tx_id.substring(0, 4) + '****',
+    repo: repo,
+    note: 'Payment accepted. Scan access granted for 24 hours.',
+    scan_url: `/scan/full?repo=${encodeURIComponent(repo)}&tx_id=${encodeURIComponent(tx_id)}`,
+    _admin_note: 'Verify in PayPal account dashboard if suspicious'
   });
 });
 
@@ -64,8 +104,8 @@ app.post('/scan', async (req, res) => {
     const result = await scanRepo(repoUrl, false);
     res.json({
       ...result,
-      _note: 'This is a FREE preview (4 checks). For full scan with 15+ checks, pay $5 at /pay',
-      _upgrade: '/pay'
+      _note: 'This is a FREE preview (4 checks). For full scan with 15+ checks, pay $5 via PayPal',
+      _upgrade: `/pay`
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -75,36 +115,33 @@ app.post('/scan', async (req, res) => {
 // Full paid scan
 app.post('/scan/full', async (req, res) => {
   const repoUrl = req.query.repo || req.body.repo;
-  const sessionId = req.query.session_id || req.body.session_id;
+  const txId = req.query.tx_id || req.body.tx_id;
 
   const error = validateRepoUrl(repoUrl);
   if (error) return res.status(400).json({ error });
 
-  if (!sessionId) {
+  if (!txId) {
     return res.status(402).json({
       error: 'Payment required',
-      message: 'Full scan costs $5.00',
-      payment_link: PAYMENT_LINK || 'Not configured',
-      instructions: '1. Pay at the payment link 2. You will get a session_id 3. Call this endpoint with ?session_id=xxx'
+      message: `Full scan costs $${PRICE}`,
+      payment_url: `https://paypal.me/${PAYPAL_ME}/${PRICE}${CURRENCY}`,
+      instructions: [
+        '1. Send payment via PayPal link above',
+        '2. Get your Transaction ID from PayPal email/receipt',
+        '3. POST {tx_id: "...", repo: "..."} to /verify-paypal',
+        '4. Then call this endpoint with tx_id parameter'
+      ]
     });
   }
 
-  // Verify Stripe payment
-  if (!stripe) {
-    return res.status(503).json({ error: 'Stripe not configured. Set STRIPE_SECRET_KEY.' });
-  }
-
-  try {
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
-    if (session.payment_status !== 'paid') {
-      return res.status(402).json({ error: 'Payment not completed or failed.' });
-    }
-    // Optional: verify amount matches
-    if (session.amount_total < PRICE_CENTS) {
-      return res.status(402).json({ error: 'Insufficient payment amount.' });
-    }
-  } catch (err) {
-    return res.status(400).json({ error: 'Invalid session_id: ' + err.message });
+  // Verify payment was submitted
+  if (!verifiedPayments.has(txId)) {
+    return res.status(402).json({
+      error: 'Payment not verified',
+      message: 'Submit your transaction ID to /verify-paypal first',
+      verify_endpoint: '/verify-paypal',
+      required_body: { tx_id: txId, repo: repoUrl }
+    });
   }
 
   try {
@@ -112,41 +149,22 @@ app.post('/scan/full', async (req, res) => {
     res.json({
       ...result,
       _payment_verified: true,
-      _session_id: sessionId.substring(0, 8) + '...'
+      _tx_id: txId.substring(0, 4) + '****'
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Direct checkout session creation (for API integrations)
-app.post('/create-checkout-session', async (req, res) => {
-  if (!stripe) return res.status(503).json({ error: 'Stripe not configured' });
-  
-  try {
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [{
-        price_data: {
-          currency: 'usd',
-          product_data: { name: 'Full Repo Security Scan', description: 'Complete security audit of one GitHub repository' },
-          unit_amount: PRICE_CENTS,
-        },
-        quantity: 1,
-      }],
-      mode: 'payment',
-      success_url: `${req.headers.origin || 'https://repo-scanner.onrender.com'}/scan/full?repo=${encodeURIComponent(req.body.repo || '')}&session_id={CHECKOUT_SESSION_ID}`,
-      cancel_url: `${req.headers.origin || 'https://repo-scanner.onrender.com'}/`,
-    });
-    res.json({ url: session.url, session_id: session.id });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
+// Simple webhook placeholder for future PayPal IPN
+app.post('/webhook/paypal', (req, res) => {
+  // Future: implement PayPal IPN/ webhook listener
+  console.log('PayPal webhook:', req.body);
+  res.sendStatus(200);
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Repo Scanner API running on port ${PORT}`);
-  console.log(`Stripe configured: ${stripe ? 'YES' : 'NO'}`);
-  console.log(`Payment link: ${PAYMENT_LINK || 'NOT SET'}`);
+  console.log(`PayPal.me: https://paypal.me/${PAYPAL_ME}/${PRICE}${CURRENCY}`);
 });

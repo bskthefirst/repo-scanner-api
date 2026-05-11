@@ -9,16 +9,23 @@ Scan GitHub repositories for exposed secrets, `.git/config`, environment files, 
 ## Pricing
 
 - **Free Preview** — 4 quick checks (`.git/config`, `.env`, `.env.local`, `config.json`)
-- **Full Scan** — $5.00 via Stripe. 15+ checks including secret pattern matching, misconfig detection, and remediation advice.
+- **Full Scan** — $5.00 via PayPal.me. 15+ checks including secret pattern matching, misconfig detection, and remediation advice.
+
+## How It Works (PayPal)
+
+1. **Free Scan** → Enter any GitHub repo URL, get instant risk score
+2. **Pay $5** → Click PayPal button, send payment to `paypal.me/bsknap/5USD`
+3. **Enter TX ID** → Paste your PayPal Transaction ID to unlock the full report
+4. **Get Full Report** → 15+ security checks with detailed findings
 
 ## API Endpoints
 
 ```
 GET  /                          → API info + landing page
-GET  /pay                       → Get Stripe payment link
+GET  /pay                       → Get PayPal payment instructions
+POST /verify-paypal             → Submit tx_id after PayPal payment
 POST /scan?repo=URL             → Free preview scan
-POST /scan/full?repo=URL&session_id=XXX  → Paid full scan
-POST /create-checkout-session   → Create Stripe checkout session
+POST /scan/full?repo=URL&tx_id=XXX  → Paid full scan
 ```
 
 ## Quick Start
@@ -27,25 +34,26 @@ POST /create-checkout-session   → Create Stripe checkout session
 git clone https://github.com/bskthefirst/repo-scanner-api.git
 cd repo-scanner-api
 npm install
-STRIPE_SECRET_KEY=sk_test_xxx node index.js
+PAYPAL_ME=yourhandle node index.js
 ```
 
-## Stripe Setup (5 min)
+## PayPal Setup (1 min)
 
-1. Create account at [stripe.com](https://stripe.com) — no KYC for test mode
-2. Get **Secret Key** from Developers → API keys
-3. Set env var: `STRIPE_SECRET_KEY=sk_live_xxx`
-4. Create a **Payment Link** ($5) or use the built-in `/create-checkout-session` endpoint
-5. Deploy and start accepting payments.
+1. You already have a PayPal.me link like `paypal.me/bsknap`
+2. Set env var: `PAYPAL_ME=bsknap`
+3. Done. Payments go straight to your PayPal. No SSN, no Stripe, no KYC.
 
 ## Deployment
 
 **Render (one-click):**
-Click the button above or:
-1. Push to GitHub
-2. New Web Service → Connect repo
-3. Set env vars: `STRIPE_SECRET_KEY`, `STRIPE_PAYMENT_LINK`
-4. Deploy
+Click the button above. Set env var `PAYPAL_ME=bsknap`.
+
+**Manual:**
+```bash
+git push origin main
+# Connect repo to Render / Railway / Fly.io
+# Set env: PAYPAL_ME=yourhandle
+```
 
 ## What It Detects
 
@@ -56,6 +64,12 @@ Click the button above or:
 - Missing security headers
 - Open CORS configurations
 - Exposed dependency files (`package.json`, `composer.json`)
+
+## Architecture
+
+- `/lib/scanner.js` — scanning engine with 12 secret patterns
+- `/public/index.html` — dark-mode landing page with built-in scanner
+- `index.js` — Express API with PayPal verification flow
 
 ## License
 
